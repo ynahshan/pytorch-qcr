@@ -1,2 +1,2 @@
-# pytorch-qci
-Pytorch library for quantization, calibration and inference of the NN models
+# pytorch-qcr
+Pytorch library for quantization, calibration and research of the Neural Networks
