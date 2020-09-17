@@ -49,6 +49,9 @@ class Fuser(object):
         return matches
 
     def find_fusable_modules(self, model, patterns=DEFAULT_PATTERNS):
+        if not hasattr(model, 'graph') or model.graph == None:
+            raise RuntimeError("Model does not have graph attribute.")
+
         graph = model.graph
 
         fused_modules = set()
