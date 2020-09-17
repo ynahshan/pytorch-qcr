@@ -4,8 +4,7 @@ import networkx as nx
 
 class Graph(object):
 
-    def __init__(self, gdict=None, is_directed=True):
-        self.is_directed = is_directed
+    def __init__(self, gdict=None):
         if gdict is None:
             gdict = {}
         self.gdict = gdict
@@ -53,7 +52,7 @@ class Graph(object):
         return res_nodes
 
     def to_namegraph(self):
-        g = Graph(is_directed=self.is_directed)
+        g = Graph()
 
         for v in self.get_nodes():
             g.add_node(v.name if hasattr(v, 'name') else v)
@@ -64,10 +63,7 @@ class Graph(object):
         return g
 
     def to_graphviz(self):
-        if self.is_directed:
-            g = graphviz.Digraph()
-        else:
-            g = graphviz.Graph()
+        g = graphviz.Digraph()
 
         for v in self.get_nodes():
             g.node(v.name) if hasattr(v, 'name') else v
@@ -78,10 +74,7 @@ class Graph(object):
         return g
 
     def to_nx(self):
-        if self.is_directed:
-            g = nx.DiGraph()
-        else:
-            g = nx.Graph()
+        g = nx.DiGraph()
 
         for v in self.get_nodes():
             g.add_node(v.name) if hasattr(v, 'name') else v
