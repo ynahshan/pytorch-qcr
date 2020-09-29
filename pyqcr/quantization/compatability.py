@@ -40,7 +40,7 @@ def check_quantization_compatability(model):
     if len(reused['model_names']) > 0:
         found_issues = True
         print(
-            "Found {} reused modules. Those models have to be converted to unique instanses. Run compatability.get_reused_modules(model) to get the list.\n".format(
+            "Found {} reused modules. Those modules has to be converted to unique instanses. Run compatability.get_reused_modules(model) to get the list.\n".format(
                 len(reused['model_names'])))
 
     non_module_ops = get_non_module_ops(model)
