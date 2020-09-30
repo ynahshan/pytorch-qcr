@@ -1,6 +1,7 @@
 import copy
 import torch
 import torch.nn as nn
+from pyqcr.torchgraph.tracer import TorchTracer
 
 
 DEFAULT_PATTERNS = [
@@ -48,11 +49,20 @@ class Fuser(object):
 
         return matches
 
-    def find_fusable_modules(self, model, patterns=DEFAULT_PATTERNS):
+    def find_fusable_modules(self, model, patterns=DEFAULT_PATTERNS, inp_shape=None, inp=None):
         if not hasattr(model, 'graph') or model.graph == None:
-            raise RuntimeError("Model does not have graph attribute.")
+            if inp_shape is not None:
+                inp = torch.rand(inp_shape)
 
-        graph = model.graph
+            if inp is None:
+                raise RuntimeError("Eather model has to have graph attribute or one of inp or inp_shape has to be specified.")
+
+            with TorchTracer() as tt:
+                tt.trace_model(model, inp)
+
+            graph = tt.to_graph()
+        else:
+            graph = model.graph
 
         fused_modules = set()
         pattern_fuse_map = []
@@ -70,11 +80,8 @@ class Fuser(object):
 
         return pattern_fuse_map
 
-    def fuse(self, model, inplace=False, patterns=DEFAULT_PATTERNS):
-        if not hasattr(model, 'graph') or model.graph == None:
-            raise RuntimeError("Model does not have graph attribute.")
-
-        fusable = self.find_fusable_modules(model, patterns)
+    def fuse(self, model, inplace=False, patterns=DEFAULT_PATTERNS, inp_shape=None, inp=None):
+        fusable = self.find_fusable_modules(model, patterns, inp_shape=inp_shape, inp=inp)
         modules_to_fuse = []
         for p, modules in fusable:
             modules_to_fuse += modules

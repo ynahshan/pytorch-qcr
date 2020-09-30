@@ -253,13 +253,10 @@ def validate(val_loader, model, criterion, args):
 
     if args.fusion:
         print("Fuse layers")
-        inp = torch.rand((1, 3, 224, 224))
-        with TorchTracer() as tt:
-            tt.trace_model(model, inp)
-            model.graph = tt.to_graph()
+        inp = torch.rand((1, 3, 224, 224)).cuda(args.gpu, non_blocking=True) if args.gpu is not None else torch.rand((1, 3, 224, 224))
 
         fu = Fuser()
-        model = fu.fuse(model)
+        model = fu.fuse(model, inp=inp)
         #print(model)
 
     if args.quantize:
