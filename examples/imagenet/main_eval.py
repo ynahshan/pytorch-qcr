@@ -18,8 +18,6 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
 
-import sys
-sys.path.append('../../')
 from pyqcr.transformation.fusion import Fuser
 from pyqcr.quantization.quantizer import ModelQuantizer
 from pyqcr.torchgraph.tracer import TorchTracer
