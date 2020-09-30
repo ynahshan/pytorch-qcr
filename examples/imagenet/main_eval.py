@@ -20,7 +20,7 @@ import torchvision.models as models
 
 import sys
 sys.path.append('../../')
-from pyqcr.transformation.module_fusion import Fuser
+from pyqcr.transformation.fusion import Fuser
 from pyqcr.quantization.quantizer import ModelQuantizer
 from pyqcr.torchgraph.tracer import TorchTracer
 
