@@ -234,7 +234,7 @@ def create_model(args):
             model = models.quantization.__dict__[args.arch](pretrained=args.pretrained)
             return model
         else:
-            print("No quantized model '{}'".format(args.arch))
+            print("Not implemented quantizable model '{}'".format(args.arch))
 
     model = models.__dict__[args.arch](pretrained=args.pretrained)
     return model
@@ -254,7 +254,7 @@ def validate(val_loader, model, criterion, args):
     model.eval()
 
     if args.fusion:
-        print("fusion")
+        print("Fuse layers")
         inp = torch.rand((1, 3, 224, 224))
         with TorchTracer() as tt:
             tt.trace_model(model, inp)
