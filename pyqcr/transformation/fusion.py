@@ -86,7 +86,9 @@ class Fuser(object):
         for p, modules in fusable:
             modules_to_fuse += modules
 
-        model = torch.quantization.fuse_modules(model, modules_to_fuse=modules_to_fuse, inplace=inplace)
+        if len(modules_to_fuse) > 0:
+            model = torch.quantization.fuse_modules(model, modules_to_fuse=modules_to_fuse, inplace=inplace)
+
         # TODO: modify graph
 
         return model
