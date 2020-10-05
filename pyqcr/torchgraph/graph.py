@@ -1,5 +1,12 @@
 import graphviz
 import networkx as nx
+import pickle
+
+
+def load(file):
+    with open(file, 'rb') as handle:
+        d = pickle.load(handle)
+        return Graph(d)
 
 
 class Graph(object):
@@ -83,6 +90,10 @@ class Graph(object):
             g.add_edge(v1.name if hasattr(v1, 'name') else v1, v2.name if hasattr(v2, 'name') else v2)
 
         return g
+
+    def save(self, file):
+        with open(file, 'wb') as handle:
+            pickle.dump(self.gdict, handle)
 
     def __repr__(self):
         return str(self.gdict)
