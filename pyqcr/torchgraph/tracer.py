@@ -299,9 +299,9 @@ class TorchTracer(object):
             handles.append(m.register_forward_pre_hook(pre_hook))
             handles.append(m.register_forward_hook(hook))
 
-        with torch.no_grad():
-            with UndoInplace(model):
-                model(*args, **kwargs)
+        # with torch.no_grad():
+        with UndoInplace(model):
+            model(*args, **kwargs)
 
         for h in handles:
             h.remove()
