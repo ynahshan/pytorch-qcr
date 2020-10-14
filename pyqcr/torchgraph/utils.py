@@ -24,3 +24,22 @@ def graph_to_model_namegraph(graph, model):
         g.add_edge(v1_, v2_)
 
     return g
+
+
+class UndoInplace(object):
+    def __init__(self, model):
+        self.model = model
+
+    def __enter__(self):
+        for m in self.model.modules():
+            if hasattr(m, 'inplace'):
+                m.inplace_modified = m.inplace
+                m.inplace = False
+
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        for m in self.model.modules():
+            if hasattr(m, 'inplace_modified'):
+                m.inplace = m.inplace_modified
+                delattr(m, 'inplace_modified')

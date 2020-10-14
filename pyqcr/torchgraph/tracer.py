@@ -4,6 +4,7 @@ import types
 from functools import wraps
 import networkx as nx
 from .graph import Graph
+from .utils import UndoInplace
 
 
 class OpTensor(object):
@@ -16,6 +17,7 @@ class OpTensor(object):
             self.dtype = inp.dtype
             self.id = inp.data_ptr()
             self.tensor_id = id(inp)
+            self.data = inp.sum().item()
 
     @property
     def is_tensor(self):
@@ -25,33 +27,35 @@ class OpTensor(object):
         res = "name: {}, type: {}".format(self.name, self.type)
         if self._istensor:
             tensor_type = self.type.__name__
-            res1 = ", {}: shape {}, dtype {}, id {}, tensor_id {}".format(tensor_type, self.shape, self.dtype, self.id, self.tensor_id)
+            res1 = ", {}: shape {}, dtype {}, id {}, tensor_id {}, data {}".format(tensor_type, self.shape, self.dtype, self.id, self.tensor_id, self.data)
             res += res1
         return res
 
 
 class TorchOp(object):
-    def __init__(self, args=[], output=None):
-        self.inputs = []
-        for arg in args:
-            if isinstance(arg, list) or isinstance(arg, tuple):
-                for inp in arg:
-                    self.inputs.append(OpTensor(inp))
-            else:
-                self.inputs.append(OpTensor(arg))
-
-        self.outputs = []
-        if isinstance(output, list) or isinstance(output, tuple):
-            for out in output:
-                self.outputs.append(OpTensor(out))
-        else:
-            self.outputs.append(OpTensor(output))
-
+    def __init__(self, inputs=[], outputs=[]):
+        self.inputs = inputs
+        self.outputs = outputs
         self._isinplace = False
         inp_ids = [inp.id for inp in self.inputs if inp.is_tensor]
         for out in self.outputs:
             if out.is_tensor and out.id in inp_ids:
                 self._isinplace = True
+
+    @staticmethod
+    def parse_args(args=[]):
+        op_args = []
+        if isinstance(args, list) or isinstance(args, tuple):
+            for arg in args:
+                if isinstance(arg, list) or isinstance(arg, tuple):
+                    for inp in arg:
+                        op_args.append(OpTensor(inp))
+                else:
+                    op_args.append(OpTensor(arg))
+        else:
+            op_args.append(OpTensor(args))
+
+        return op_args
 
     @property
     def is_inplace(self):
@@ -73,8 +77,8 @@ class TorchOp(object):
 
 
 class FuncOp(TorchOp):
-    def __init__(self, func, args, output):
-        super(FuncOp, self).__init__(args, output)
+    def __init__(self, func, inputs, outputs):
+        super(FuncOp, self).__init__(inputs, outputs)
         self._op_name = func.__name__
         self.op_type = 'function'
 
@@ -84,8 +88,8 @@ class FuncOp(TorchOp):
 
 
 class ModuleOp(TorchOp):
-    def __init__(self, module, args, output):
-        super(ModuleOp, self).__init__(args, output)
+    def __init__(self, module, inputs, outputs):
+        super(ModuleOp, self).__init__(inputs, outputs)
         self.module = module
         self.ops = []
         self.op_type = 'module'
@@ -159,6 +163,7 @@ class TorchTracer(object):
     def __init__(self):
         self._trace = []
         self._main_trace = None
+        self._tracing_enabled = True
 
     def __enter__(self):
         self.trace_ = []
@@ -206,8 +211,22 @@ class TorchTracer(object):
         for name in self.nn_functional.funcs:
             setattr(torch.nn.functional, name, getattr(self.nn_functional, name))
 
+    class NoTrace(object):
+        def __init__(self, tracer):
+            self.tracer = tracer
+
+        def __enter__(self):
+            self.tracer.__exit__(None, None, None)
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            self.tracer.__enter__()
+
+    def no_trace(self):
+        return TorchTracer.NoTrace(self)
+
     def _get_tensor_methods(self):
-        exclude_methods = ['__format__', '__dir__', '__len__', '__sizeof__', '__bool__', '__float__',
+        exclude_methods = ['__format__', '__dir__', '__len__', '__sizeof__', '__bool__', '__float__', '__hash__',
                            '__int__', '_is_view', '_make_subclass', '_values', 'data_ptr', 'type',
                            'type_as', 'detach', 'dim', 'flatten', 'numel', 'size', 'to']
 
@@ -227,9 +246,13 @@ class TorchTracer(object):
         @wraps(func)
         def wrapper(*args, **kwargs):
             #             print(func.__qualname__)
-            result = func(*args, **kwargs)
-            op = FuncOp(func, list(args), result)
-            self.trace.append(op)
+            with self.no_trace():
+                inputs = FuncOp.parse_args(args)
+                result = func(*args, **kwargs)
+                outputs = FuncOp.parse_args(result)
+                op = FuncOp(func, inputs, outputs)
+                self.trace.append(op)
+
             return result
 
         return wrapper
@@ -247,16 +270,24 @@ class TorchTracer(object):
             self._trace = self._main_trace
             self._main_trace = None
 
-    def trace_model(self, model, input):
+    def trace_model(self, model, *args, **kwargs):
+        if isinstance(model, torch.nn.DataParallel) or isinstance(model, torch.nn.parallel.DistributedDataParallel):
+            raise RuntimeError("TorchTracer does not support DataParallel and DistributedDataParallel")
+
         module_ops = {}
 
         def pre_hook(module, input):
             module_ops[module] = []
             self.redirect_trace(module_ops[module])
+            with self.no_trace():
+                module._inputs = ModuleOp.parse_args(input)
 
         def hook(module, input, output):
             self.restore_tracing()
-            mop = ModuleOp(module, input, output)
+            with self.no_trace():
+                outputs = ModuleOp.parse_args(output)
+                mop = ModuleOp(module, module._inputs, outputs)
+                delattr(module, '_inputs')
             mop.ops = module_ops[module]
             self.trace.append(mop)
 
@@ -268,7 +299,9 @@ class TorchTracer(object):
             handles.append(m.register_forward_pre_hook(pre_hook))
             handles.append(m.register_forward_hook(hook))
 
-        model(input)
+        with torch.no_grad():
+            with UndoInplace(model):
+                model(*args, **kwargs)
 
         for h in handles:
             h.remove()
@@ -343,21 +376,32 @@ class TorchTracer(object):
                 conn[e].producers.append(op)
                 tensor_counter += 1
 
+        def is_filtered(op):
+            filter = [ScalarOp]
+            for op_type in filter:
+                if isinstance(op, op_type):
+                    return True
+
+            return False
+
         # create graph from connections
         g = Graph()
 
         # add ops as nodes
         for tid in conn:
             for c in conn[tid].consumers:
-                g.add_node(c)
+                if not is_filtered(c):
+                    g.add_node(c)
             for p in conn[tid].producers:
-                g.add_node(p)
+                if not is_filtered(p):
+                    g.add_node(p)
 
         # add tensor connections as adges to graph
         for e in conn:
             for p in conn[e].producers:
                 for c in conn[e].consumers:
-                    g.add_edge(p, c)
+                    if not is_filtered(p) and not is_filtered(c):
+                        g.add_edge(p, c)
 
         # Perform graph cleanups. Consider in future to allow to disable those cleanups.
 
@@ -435,5 +479,10 @@ class TorchTracer(object):
                     target = [inp for inp in node2.inputs if inp.is_tensor and out.is_tensor and inp.id == out.id]
                     if len(target) > 0:
                         # prune connections created by memory reuse optimization
+                        # TODO: check other inputs
                         if out.tensor_id != target[0].tensor_id:
+                            graph.remove_edge(node1, node2)
+                        elif out.shape != target[0].shape:
+                            graph.remove_edge(node1, node2)
+                        elif out.data != target[0].data:
                             graph.remove_edge(node1, node2)
